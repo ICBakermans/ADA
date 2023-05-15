@@ -1,0 +1,47 @@
+main:
+  params: [input]
+  steps:
+    - writeToBigQuery:
+        call: http.post
+        args:
+            url: https://write-to-bigquery-z7dpx52pfa-uc.a.run.app
+            body:
+                customer_id: ${input.customer_id}
+                amount: ${input.amount}
+        result: bigQueryResult
+    - updateStatus:
+        call: http.post
+        args:
+            url: https://update-status-z7dpx52pfa-uc.a.run.app
+            body: ${bigQueryResult.body}
+        result: updateStatusResult
+    - initParallelResults:
+        assign:
+            - shipmentResult: ${""}
+            - customerResult: ${""}
+    - parallelNotify:
+        parallel:
+          shared: [updateStatusResult, shipmentResult, customerResult]
+          branches:
+            - notifyShipment:
+                steps:
+                  - notifyShipmentCall:
+                      call: http.post
+                      args:
+                        url: https://notify-shipment-z7dpx52pfa-uc.a.run.app
+                        body:
+                          input: ${updateStatusResult.body}
+                      result: shipmentResult
+            - notifyCustomer:
+                steps:
+                  - notifyCustomerCall:
+                      call: http.post
+                      args:
+                        url: https://notify-customer-z7dpx52pfa-uc.a.run.app
+                        body:
+                          input: ${updateStatusResult.body}
+                      result: customerResult
+    - returnResult:
+        return:
+            notifyShipmentResult: ${shipmentResult}
+            notifyCustomerResult: ${customerResult}
