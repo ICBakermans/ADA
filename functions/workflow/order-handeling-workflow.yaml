@@ -1,0 +1,66 @@
+main:
+    params: [input]
+    steps:
+        - CreateOrder:
+            call: http.post
+            args:
+                url: http://35.222.109.1:5000/orders
+                body:
+                    product_id: $(input.product_id)
+                    user_id: $(input.user_id)
+                    payment_id: $(input.payment_id)
+                    shipping_id: $(input.shipping_id)
+                    status: $(input.status)
+            result: Order
+        - CheckStock: 
+            call: http.get 
+            args:
+                url: http://35.222.109.1:5000/products/stock/${Order.product_id}
+            result: Stock       
+
+        - AcceptReject:
+            call: http.post
+            args:
+                url: http://35.222.109.1:5000/products/stock/check/${input.product_id}
+                body:
+                    order_amount: $(input.order_amount)
+            result: OrderCheck
+
+        - ConditionalCheck:
+            switch:
+                - condition: ${OrderCheck.body.message == "rejected"}
+                  next: UpdateRejectedOrder
+                - condition: ${OrderCheck.body.message == "accepted"}
+                  next: UpdateAcceptedOrder
+
+        - UpdateRejectedOrder:
+            call: http.put
+            args:
+                url: http://35.222.109.1:5000/products/stock/check/${Order.order_id}
+                body:
+                    order_status: ${OrderCheck.body}
+            result: OrderStatus
+            next: DeleteOrder
+
+        - UpdateAcceptedOrder:
+            call: http.put
+            args:
+                url: http://35.222.109.1:5000/orders/${Order.order_id}
+                body:
+                    order_status: ${OrderCheck.body.message}
+            result: OrderStatus
+            next: UpdateStock
+
+        - DeleteOrder:
+            call: http.delete
+            args:
+                url: http://35.222.109.1:5000/orders/${Order.order_id}
+            next: end
+
+        - UpdateStock:
+            call: http.put
+            args:
+                url: http://35.222.109.1:5000/products/stock/${input.product_id}
+                body:
+                    inventory: ${Stock.body.stock - input.orderamount}
+            next: end
